@@ -39,6 +39,9 @@ namespace shyft {
         namespace btk = bayesian_kriging;
         using namespace std;
 
+		using namespace shyft::timeseries;
+        typedef point_timeseries<timeaxis> pts_t;
+
         /** \brief the interpolation_parameter keeps parameter needed to perform the
          * interpolation steps as specified by the user.
          */
@@ -164,6 +167,29 @@ namespace shyft {
 
         };
 
+        /** \brief catchment routing provides catchment level
+         * routing/handling of data
+         */
+        struct catchment_routing {
+            size_t cid;///< All cells that have this catchment id belongs to this catchment_routing
+            catchment_routing(size_t cid=0):cid(cid) {}
+            #ifndef SWIG
+            /** \brief calculate avg discharge of cells, currently no routing
+            */
+            template <class C>
+            void calculate( const vector<C>& cells) {
+                if(cells.size()==0)
+                    return;
+                avg_discharge=pts_t(cells[0].rc.avg_discharge.time_axis,0.0);
+                for(const C& c: cells) {
+                    if(c.geo.catchment_id()==cid)
+                        avg_discharge.add(c.rc.avg_discharge);
+                }
+            }
+            #endif
+            pts_t avg_discharge;
+        };
+
         /** \brief region_model is the calculation model for a region, where we can have
         * one or more catchments.
         * The role of the region_model is to describe region, so that we can run the
@@ -185,7 +211,7 @@ namespace shyft {
         *
         */
 
-        template<class C>
+        template<class C, class Cc=catchment_routing >
         class region_model {
         public:
             typedef C cell_t;
@@ -196,6 +222,7 @@ namespace shyft {
             typedef std::shared_ptr<cell_vec_t > cell_vec_t_;
             typedef std::shared_ptr<parameter_t> parameter_t_;
             typedef typename cell_vec_t::iterator cell_iterator;
+            typedef Cc cell_catchment_t;
         protected:
 
             cell_vec_t_ cells;///< a region consists of cells that orchestrate the distributed correlation
@@ -212,7 +239,7 @@ namespace shyft {
             //      obs. snow  (swe,sca ?)
             //     after run's of the model
             //     we can extract cell-level into into the catchments
-
+            vector<cell_catchment_t> cell_catchment;///<< catchment level model, aggregate of cells in catchment.
             parameter_t_ region_parameter;///< applies to all cells, except those with catchment override
             std::map<size_t, parameter_t_> catchment_parameters;///<  for each catchment parameter is possible
 
@@ -232,8 +259,15 @@ namespace shyft {
                 set_region_parameter(*(c.region_parameter));
                 for(const auto& pair:c.catchment_parameters)
                     set_catchment_parameter(pair.first, *(pair.second));
+                cell_catchment=c.cell_catchment;
             }
-
+            void make_cell_catchments() {
+                n_catchments = number_of_catchments();
+                cell_catchment.reserve(n_catchments);cell_catchment.clear();
+                for(size_t i=0;i<n_catchments;++i) {
+                    cell_catchment.emplace_back(i);
+                }
+            }
 
         public:
             /** \brief construct a region model,
@@ -244,6 +278,7 @@ namespace shyft {
             region_model(std::shared_ptr<std::vector<C> >& cells, const parameter_t &region_param)
              : cells(cells) {
                 set_region_parameter(region_param);// ensure we have a correct model
+                make_cell_catchments();
                 ncore = thread::hardware_concurrency()*4;
             }
             region_model(std::shared_ptr<std::vector<C> >& cells,
@@ -251,6 +286,7 @@ namespace shyft {
                          const std::map<size_t, parameter_t>& catchment_parameters)
              : cells(cells) {
                 set_region_parameter(region_param);
+                make_cell_catchments();
                 for(const auto & pair:catchment_parameters)
                      set_catchment_parameter(pair.first, pair.second);
                 ncore = thread::hardware_concurrency()*4;
@@ -295,7 +331,7 @@ namespace shyft {
                 for(auto&c:*cells){
                     c.init_env_ts(time_axis);
                 }
-                n_catchments = number_of_catchments();// keep this/assume invariant..
+
                 this->time_axis = time_axis;
                 using namespace shyft::core;
                 using namespace std;
@@ -431,6 +467,7 @@ namespace shyft {
                 if(! (time_axis.size()>0))
                     throw runtime_error("region_model::run with invalid time_axis invoked");
                 parallel_run(time_axis, begin(*cells), end(*cells), thread_cell_count);
+                parallel_run_catchments(time_axis,ncore);
             }
 
             /** \brief set the region parameter, apply it to all cells
@@ -573,27 +610,49 @@ namespace shyft {
             size_t size() const { return distance(begin(*cells), end(*cells)); }
 
             /** \brief catchment_discharges, vital for calibration
-             * \tparam TSV a vector<timeseries> type, where timeseries supports:
+             * \param cr a vector<pts_t> type, where pts_t supports:
              *  -# .ct(timeaxis_t, double) fills a series with 0.0 for all time_axis elements
              *  -# .add( const some_ts & ts)
              * \note the ts type should have proper move/copy etc. semantics
-             *
              */
-            template <class TSV>
-            void catchment_discharges( TSV& cr) const {
-                typedef typename TSV::value_type ts_t;
-                cr.clear();
-                cr.reserve(n_catchments);
-                for(size_t i=0;i<n_catchments;++i) {
-                    cr.emplace_back(ts_t(time_axis, 0.0));
-                }
-                for(const auto& c: *cells) {
-                    if (is_calculated(c.geo.catchment_id()))
-                        cr[c.geo.catchment_id()].add(c.rc.avg_discharge);
+            void catchment_discharges( vector<pts_t>& cr) const {
+                //typedef typename TSV::value_type ts_t;
+                cr.clear();cr.reserve(n_catchments);
+                pts_t zero_ts(time_axis,0.0);// sih: hmm. nan is better default value ?
+                for(const auto&cc:cell_catchment) {// cell_catchments.cid are 0..n-1
+                    cr.push_back(is_calculated(cc.cid)?cc.avg_discharge:zero_ts);
                 }
             }
 
         protected:
+            #ifndef SWIG
+            void single_run_catchment(const timeaxis_t& time_axis,size_t cid_begin,size_t n) {
+                for(size_t cid=cid_begin;cid<cid_begin+n;++cid) {
+                    if(is_calculated(cid))
+                        cell_catchment[cid].calculate(*cells);
+                }
+            }
+
+            void parallel_run_catchments(const timeaxis_t time_axis,size_t ncore) {
+                if(ncore==0)
+                    throw runtime_error("ncore=0 in parallel_run_catchments");
+                size_t thread_catchment_count= ncore > n_catchments?1:n_catchments/ncore;
+                vector<future<void>> calcs;
+                for (size_t i = 0; i < n_catchments;) {
+                    size_t n = thread_catchment_count;
+                    if (i + n > n_catchments)
+                        n = n_catchments - i;
+                    calcs.emplace_back(
+                        async(launch::async, [this, &time_axis, i, n]() {
+                            this->single_run_catchment(time_axis, i, n); }
+                        )
+                    );
+                    i = i + n;
+                }
+                for(auto &f:calcs)
+                    f.get();
+
+            }
             /** \brief parallell_run using a mid-point split + async to engange multicore execution
              *
              * \param time_axis forwarded to the cell.run(time_axis)
@@ -638,6 +697,7 @@ namespace shyft {
                     f.get();
                 return;
             }
+            #endif
         };
 
 

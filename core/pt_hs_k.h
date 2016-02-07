@@ -182,7 +182,7 @@ namespace shyft {
                 // At my pos xx mm of snow moves in direction d.
 
                 // Actual Evapotranspiration
-                response.ae.ae = actual_evapotranspiration::calculate_step(state.kirchner.q, response.pt.pot_evapotranspiration, parameter.ae.ae_scale_factor, state.snow.sca, period.timespan());
+                response.ae.ae = actual_evapotranspiration::calculate_step(state.kirchner.q, response.pt.pot_evapotranspiration*(1-state.snow.sca), parameter.ae.ae_scale_factor, period.timespan());
 
                 // Use responses from PriestleyTaylor and HBVSnow in Kirchner
                 kirchner.step(period.start, period.end, state.kirchner.q, response.kirchner.q_avg, response.snow.outflow, response.ae.ae);

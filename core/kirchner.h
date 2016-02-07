@@ -200,9 +200,21 @@ namespace shyft {
                       boost::numeric::odeint::runge_kutta_dopri5<state_type>())),
                       average_computer(dense_stepper), param(param) {}
 
-
+                /** \brief step Kirchner model forward from time t0 to time t1, using a callable
+                 *  f(q) to get the evapotranspiration.
+                 *
+                 * \ref step below for dnote If the supplied q (state) is less than min_q(0.00001, it represents mm water..),
+                 *       it is forced to min_q to ensure numerical stability
+                 */
+                #ifndef SWIG
+                template< typename e_func>
+                void step(shyft::timeseries::utctime T0, shyft::timeseries::utctime T1,double &q, double &q_avg, double p, e_func && ae_function) {
+                    double e= ae_function(q);
+                    step(T0,T1,q,q_avg,p,e);
+                }
+                #endif
                 /** \brief step Kirchner model forward from time t0 to time t1
-                 * \note If the supplied q (state) is less than min_q(0.00001, it represents mm water..), 
+                 * \note If the supplied q (state) is less than min_q(0.00001, it represents mm water..),
                  *       it is forced to min_q to ensure numerical stability
                  */
                 void step(shyft::timeseries::utctime T0, shyft::timeseries::utctime T1, double& q, double& q_avg, double p, double e) {

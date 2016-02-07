@@ -27,7 +27,7 @@ namespace shyft {
 		namespace actual_evapotranspiration {
 			/**<  keeps the parameters (potential calibration/localization) for the AE */
 			struct parameter {
-				double ae_scale_factor = 1.5; ///<default value is 1.5
+				double ae_scale_factor = 1.5; ///< [mm] default value is 1.5
 				parameter(double ae_scale_factor=1.5) : ae_scale_factor(ae_scale_factor) {}
 			};
 
@@ -36,26 +36,29 @@ namespace shyft {
 				double ae = 0.0;
 			};
 
+
 			/** \brief actual_evapotranspiration calculates actual evapotranspiration
-			 * based on supplied parameters
+			 * based on supplied parameters.
 			 *
-			 * \param water_level
+			 * If part of the area you are calculating ae for is snow covered,
+			 * make sure that you multiply p.t.evap*(1-sca).
+			 *
+			 *  As the water level in the 'ground-layer' approaches zero, the actual evatranspiration goes to zero (reasonable!)
+			 *  If the water level in the 'ground-layer' is > ae_scale_factor the actual evatranspiration ~ potential (reasonable!)
+			 *  An interesting article can be found here: http://onlinelibrary.wiley.com/doi/10.1029/2006JD008351/full
+			 *
+			 * \param water_level [mm]
 			 * \param potential_evapotranspiration
 			 * \param scale_factor typically 1.5
-			 * \param snow_fraction 0..1
 			 * \return calculated actual evapotranspiration
-			 *
 			 */
-
-			inline double calculate_step(const double water_level,
-				const double potential_evapotranspiration,
-				const double scale_factor,
-				const double snow_fraction,
-				const utctime dt) {
-				const double dh = double(dt)/calendar::HOUR;
+			inline double calculate_step(const double water_level,const double potential_evapotranspiration,const double scale_factor, const utctimespan dt) {
+                const double dh=double(dt)/calendar::HOUR;
 				const double scale = scale_factor*dh/3.0;
-				return potential_evapotranspiration*(1.0 - exp(-water_level/scale))*(1.0 - snow_fraction)/dh;
+                return potential_evapotranspiration*(1.0-exp(-water_level/scale))/dh;
 			}
+
+
 		};
 	};
 };
