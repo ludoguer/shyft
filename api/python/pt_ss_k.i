@@ -83,17 +83,17 @@ namespace shyft {
 namespace shyft {
   namespace core {
     namespace model_calibration {
-        %template(PTSSKOptimizer) optimizer<region_model<pt_ss_k::cell_discharge_response_t>, shyft::core::pt_ss_k::parameter, pts_t>;
+        %template(PTSSKOptimizer) optimizer<region_model<pt_ss_k::cell_discharge_response_t,catchment_routing>, shyft::core::pt_ss_k::parameter, pts_t>;
     }
   }
 }
 
 namespace shyft {
   namespace core {
-    %template(PTSSKOptModel) region_model<pt_ss_k::cell_discharge_response_t>;
-    typedef region_model<pt_ss_k::cell_discharge_response_t> PTSSKOptModel;
-    %template(PTSSKModel) region_model<pt_ss_k::cell_complete_response_t>;
-    typedef region_model<pt_ss_k::cell_complete_response_t> PTSSKModel;
+    %template(PTSSKOptModel) region_model<pt_ss_k::cell_discharge_response_t,catchment_routing>;
+    typedef region_model<pt_ss_k::cell_discharge_response_t,catchment_routing> PTSSKOptModel;
+    %template(PTSSKModel) region_model<pt_ss_k::cell_complete_response_t,catchment_routing>;
+    typedef region_model<pt_ss_k::cell_complete_response_t,catchment_routing> PTSSKModel;
     %template(run_interpolation) PTSSKModel::run_interpolation<shyft::api::a_region_environment,shyft::core::interpolation_parameter>;
     %template(run_interpolation) PTSSKOptModel::run_interpolation<shyft::api::a_region_environment,shyft::core::interpolation_parameter>;
   }

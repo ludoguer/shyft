@@ -40,7 +40,7 @@
 					<Add directory="../bin/Release" />
 				</Linker>
 				<ExtraCommands>
-					<Add after="cd ../bin/Release &amp;&amp; ./test_shyft  kalman_test test_basic_filter" />
+					<Add after="cd ../bin/Release &amp;&amp; ./test_shyft  region_model_test" />
 					<Mode after="always" />
 				</ExtraCommands>
 			</Target>
@@ -122,8 +122,6 @@
 		<Unit filename="inverse_distance_test.h">
 			<Option virtualFolder="methods/" />
 		</Unit>
-		<Unit filename="kalman_test.cpp" />
-		<Unit filename="kalman_test.h" />
 		<Unit filename="kirchner_test.cpp">
 			<Option virtualFolder="methods/" />
 		</Unit>
