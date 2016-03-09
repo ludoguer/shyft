@@ -40,10 +40,10 @@ namespace shyft {
         struct cell_response {
             priestley_taylor::response pt;
             gamma_snow::response gs;
+            actual_evapotranspiration::response ae;
         };
         struct catchment_response {
             kirchner::response kirchner;
-            actual_evapotranspiration::response ae;
             // Stack response
             double total_discharge;
         };
@@ -162,9 +162,6 @@ namespace shyft {
                 gs.step(gs_state, response.gs, period.start, period.timespan(), parameter.gs,
                         temp, rad, prec, wind_speed_accessor.value(i), rel_hum,forest_fraction,altitude);
 
-                // TODO: Communicate snow
-                // At my pos xx mm of snow moves in direction d.
-
                 // Actual Evapotranspiration
                 double act_evap = actual_evapotranspiration::calculate_step(q,
                                                     (1-response.gs.sca)*pot_evap,
@@ -172,26 +169,71 @@ namespace shyft {
                                                     period.timespan());
                 response.ae.ae = act_evap;
 
-                // Use responses from PriestleyTaylor and GammaSnow in Kirchner
-                double q_avg;
-                kirchner.step(period.start, period.end, q, q_avg, response.gs.outflow, act_evap);
-                state.kirchner.q = q; // Save discharge state variable
-                response.kirchner.q_avg = q_avg;
-
-                //
-                // Adjust land response for lakes and reservoirs (Treat them the same way for now)
-                double total_lake_fraction = geo_cell_data.land_type_fractions_info().lake() +
-                    geo_cell_data.land_type_fractions_info().reservoir();
-                double corrected_discharge = prec*total_lake_fraction +
-                    response.gs.outflow*geo_cell_data.land_type_fractions_info().glacier() +
-                    (1.0 - total_lake_fraction - geo_cell_data.land_type_fractions_info().glacier())*q_avg;
-                response.total_discharge = corrected_discharge;
-
-                // Possibly save the calculated values using the collector callbacks.
                 response_collector.collect(i, response);///< \note collect the response valid for the i'th period (current state is now at the end of period)
             }
             response_collector.set_end_response(response);
         }
+
+        /** \brief catchment routing provides catchment level
+         * routing/handling of data
+         * SiH Comments:
+         * maybe easier to take it the opposite way around.
+         *  look at the catchment as the 'super-cell',
+         *   and delegate the details of calculations to the
+         *   super-cell.
+         *  why ?:
+         *   - easy to do cell-level parallell first
+         *     then do catchment level after that.
+         *   - easy to pass data from cell to catchment
+         *   - we can still have a routing model.
+         *  who not ?:
+         *   - if few cells, we do not gain full effect of parallel core (e.g. one catchment have 10 cells, the other 90).
+         *  conclusion:
+         *   seems like the best choice to have integrated pt_gs_ck, or top-layer cell, then catchment kirchner
+         */
+        struct catchment_routing {
+            size_t cid;///< All cells that have this catchment id belongs to this catchment_routing
+            catchment_routing(size_t cid=0):cid(cid) {}
+
+            #ifndef SWIG
+            /** \brief calculate avg discharge of cells, currently no routing
+            */
+            template <class C, class P, class S>
+            void calculate( const vector<C>& cells, const P& parameter,S& state) {
+                if(cells.size()==0)
+                    return;
+                const auto& time_axis= cells[0].rc.avg_discharge.time_axis;
+                pts_t precip(time_axis,0);
+                pts_t evap(time_axis,0);
+                pts_t direct_response(time_axis,0);
+
+                // (1) collect precipitation and actual evapotranspiration from the cells, also compute and land areatypes from all cells..
+                double kirchner_area=0.0;
+                double area=0.0;
+                for(const C& c: cells) { // could be parallell, slice in time or cells
+                    if(c.geo.catchment_id()==cid) {
+                        precip.add(c.rc.precipitation);
+                        evap.add(c.rc.actual_evapotranspiration);
+                        direct_response(c.rc.direct_response);
+                        area += c.geo.area(); // needed,but could be pre-computed and stashed away on catchment-structure
+                        kirchner_area += c.area()*(c.geo.land_type_fractions().forest() + c.geo.land_type_fractions().unspecified());
+                    }
+                }
+
+                // (2) feed total output from cells into kirchner and compute final response
+                kirchner::calculator<kirchner::trapezoidal_average, typename P::kirchner_parameter_t> kirchner(parameter.kirchner);
+                avg_discharge=pts_t(time_axis,0.0);
+                for(size_t i=0;i<time_axis.size();++i) {
+                    utcperiod period = time_axis(i);
+                    double q_avg;
+                    kirchner.step(period.start, period.end, state.kirchner.q, q_avg, precip.value(i), evap.value(i));
+                    avg_discharge.set(i,direct_response.value(i) + q_avg);
+                }
+            }
+            #endif
+            pts_t avg_discharge;
+        };
+
 #endif
     } // pt_gs_ck
   } // core
