@@ -114,7 +114,7 @@ class BaseGisDataFetcher(object):
         self.geometry = geometry
         self.epsg_id = epsg_id
         if server_name.endswith('p'):
-            self.url_template = "http://{}:{}/arcgis/rest/services/SHyFT_v1/SHyFT/MapServer/{}/query"
+            self.url_template = "http://{}:{}/arcgis/rest/services/SHyFT/SHyFT/MapServer/{}/query"
         else:
             self.url_template = "http://{}:{}/arcgis/rest/services/EnkiLandTypes/EnkiLandTypes/MapServer/{}/query"
         if os.environ.get("NO_PROXY", False) and not self.server_name in os.environ["NO_PROXY"]: os.environ[
@@ -229,7 +229,7 @@ class LandTypeFetcher(BaseGisDataFetcher):
 class ReservoirFetcher(BaseGisDataFetcher):
     def __init__(self, epsg_id, geometry=None):
         super(ReservoirFetcher, self).__init__(geometry=geometry, server_name="oslwvagi001p", server_port="6080",
-                                               service_index=5, epsg_id=epsg_id)
+                                               service_index=6, epsg_id=epsg_id)
         self.query["where"] = "1 = 1"
         self.query["outFields"] = "OBJECTID"
 
@@ -253,10 +253,10 @@ class ReservoirFetcher(BaseGisDataFetcher):
 class CatchmentFetcher(BaseGisDataFetcher):
     def __init__(self, catchment_type, identifier, epsg_id):
         if catchment_type == 'regulated':
-            service_index = 6
+            service_index = 7 # 6
             # self.identifier = 'POWER_PLANT_ID'
         elif catchment_type == 'unregulated':
-            service_index = 7
+            service_index = 8 # 7
             # self.identifier = 'FELTNR'
         else:
             raise GisDataFetchError(
