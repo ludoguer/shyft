@@ -40,7 +40,7 @@ namespace shyft {
         using namespace std;
 
 		using namespace shyft::timeseries;
-        typedef point_timeseries<timeaxis> pts_t;
+        typedef point_ts<timeaxis> pts_t;
 
         /** \brief the interpolation_parameter keeps parameter needed to perform the
          * interpolation steps as specified by the user.
@@ -115,6 +115,7 @@ namespace shyft {
         * \tparam TSA  time-series accessor to use for converting the ts to the execution time-axis.
         * \tparam TA   time-axis \ref shyft::timeseries::timeaxis that goes into the constructor of TSA object
         */
+        #ifndef SWIG
         template <class GPTS, class TSA, class TA>
         class idw_compliant_geo_point_ts {
             const GPTS& s; //< type geo_point_ts, and reference is ok because we use this almost internally... hm.. in run_idw_interpolation, (so we should define it there..)
@@ -126,7 +127,7 @@ namespace shyft {
             geo_point mid_point() const { return s.mid_point(); }
             double value(size_t i) const { return tsa.value(i); }
         };
-
+        #endif
 
         /** \brief region_environment contains the measured/forecasted sources of
         *  environmental properties, each that contains a geo_point and a time-series
@@ -180,7 +181,7 @@ namespace shyft {
             void calculate( const vector<C>& cells) {
                 if(cells.size()==0)
                     return;
-                avg_discharge=pts_t(cells[0].rc.avg_discharge.time_axis,0.0);
+                avg_discharge=pts_t(cells[0].rc.avg_discharge.ta,0.0);
                 for(const C& c: cells) {
                     if(c.geo.catchment_id()==cid)
                         avg_discharge.add(c.rc.avg_discharge);
@@ -241,7 +242,7 @@ namespace shyft {
             //     we can extract cell-level into into the catchments
             vector<cell_catchment_t> cell_catchment;///<< catchment level model, aggregate of cells in catchment.
             parameter_t_ region_parameter;///< applies to all cells, except those with catchment override
-            std::map<size_t, parameter_t_> catchment_parameters;///<  for each catchment parameter is possible
+            std::map<int, parameter_t_> catchment_parameters;///<  for each catchment parameter is possible
 
             std::vector<bool> catchment_filter;///<if active (alias .size()>0), only calc if catchment_filter[catchment_id] is true.
 
@@ -283,7 +284,7 @@ namespace shyft {
             }
             region_model(std::shared_ptr<std::vector<C> >& cells,
                          const parameter_t &region_param,
-                         const std::map<size_t, parameter_t>& catchment_parameters)
+                         const std::map<int, parameter_t>& catchment_parameters)
              : cells(cells) {
                 set_region_parameter(region_param);
                 make_cell_catchments();
@@ -499,12 +500,12 @@ namespace shyft {
                 \param catchment_id the 0 based catchment_id that correlates to the cells catchment_id
                 \param a reference to the parameter that will be kept for those cells
             */
-            void set_catchment_parameter(size_t catchment_id, const parameter_t & p) {
+            void set_catchment_parameter(int catchment_id, const parameter_t & p) {
                 if (catchment_parameters.find(catchment_id) == catchment_parameters.end()) {
                     auto shared_p = parameter_t_(new parameter_t(p));// add to map, a copy of p
                     catchment_parameters[catchment_id] = shared_p;
                     for(auto &c:*cells)
-                        if (c.geo.catchment_id() == catchment_id)
+                        if (int(c.geo.catchment_id()) == catchment_id)
                             c.set_parameter(shared_p);
                 } else {
                     *(catchment_parameters[catchment_id]) = p; //copy values into existing parameters
@@ -514,17 +515,17 @@ namespace shyft {
 
             /** \brief remove a catchment specific parameter override, if it exists.
             */
-            void remove_catchment_parameter(size_t catchment_id) {
+            void remove_catchment_parameter(int catchment_id) {
                 auto it = catchment_parameters.find(catchment_id);
                 if (it != catchment_parameters.end()) {
                     catchment_parameters.erase(catchment_id);// get rid of it, and update the affected cells with the global parameter
                     for(auto & c:*cells)
-                        if (c.geo.catchment_id() == catchment_id)
+                        if (int(c.geo.catchment_id()) == catchment_id)
                             c.set_parameter(region_parameter);
                 }
             }
             /** \brief returns true if there exist a specific parameter override for the specified 0-based catchment_id*/
-            bool has_catchment_parameter(size_t catchment_id) const {
+            bool has_catchment_parameter(int catchment_id) const {
                 return catchment_parameters.find(catchment_id) != catchment_parameters.end();
             }
 
@@ -533,7 +534,7 @@ namespace shyft {
             * \param catchment_id 0 based catchment id as placed on each cell
             * \returns reference to the real parameter structure for the catchment_id if exists, otherwise the global parameters
             */
-            parameter_t& get_catchment_parameter(size_t catchment_id) const {
+            parameter_t& get_catchment_parameter(int catchment_id) const {
                 auto search=catchment_parameters.find(catchment_id);
                 if ( search != catchment_parameters.end())
                     return *((*search).second);
@@ -623,7 +624,6 @@ namespace shyft {
                     cr.push_back(is_calculated(cc.cid)?cc.avg_discharge:zero_ts);
                 }
             }
-
         protected:
             #ifndef SWIG
             void single_run_catchment(const timeaxis_t& time_axis,size_t cid_begin,size_t n) {
